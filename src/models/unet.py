@@ -36,7 +36,7 @@ class UNet(nn.Module):
                                 )
 
         self.decoder = []
-        self.decoder.append(get_upsample_layer(in_channels=n_d[-1],
+        self.decoder.append(get_upsample_layer(in_channels=n_s[-1],
                                                num_filters=n_u[0],
                                                kernel_size=k_u[0],
                                                interpolation=interpolation
@@ -67,9 +67,12 @@ class UNet(nn.Module):
             out = self.encoder[i].forward(out)
             encoder_outs.append(out)
 
+        #out = self.decoder[0].forward(out)
+
+        out = self.skipper[-1].forward(out)
         out = self.decoder[0].forward(out)
         for i in range(1, len(self.decoder)-1):
-            skip = self.skipper[-i].forward(encoder_outs[-i-1])
+            skip = self.skipper[-i-1].forward(encoder_outs[-i-1])
             out = self.decoder[i].forward(torch.cat((out, skip), dim=1))
 
         out = self.decoder[-1].forward(out)
