@@ -38,15 +38,22 @@ def main():
     writer = SummaryWriter(args.log_dir)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"[*] Active device: {device}")
-    model = UNet(32, [128]*5, [128]*5, [4]*5, [3]*5, [3]*5, [1]*5, "bilinear")
+    model = UNet(32, 3, [128]*5, [128]*5, [4]*5, [3]*5, [3]*5, [1]*5, "bilinear")
     model.to(device)
 
-    input_ = torch.rand([1, 32, 256, 256]) * 0.1
-    img = cv2.imread(args.image_path, cv2.IMREAD_GRAYSCALE) / 255.0
-    img = img[100:args.image_size+100, 100:args.image_size+100]
+
+    img = cv2.imread(args.image_path, cv2.IMREAD_COLOR)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB) / 255.0
+    #img = img[100:args.image_size+100, 100:args.image_size+100]
+    img = cv2.resize(img, (args.image_size, args.image_size), interpolation=cv2.INTER_CUBIC)
     if img.ndim == 2:
         img = np.expand_dims(img, axis=0)
     img = np.expand_dims(img, axis=0)
+    img = np.transpose(img, axes=(0, 3, 1, 2))
+
+    input_ = torch.rand([1, 32, img.shape[2], img.shape[3]]) * 0.1
+    print(input_.shape)
+
     img = torch.from_numpy(img)
     img = img.to(torch.float32)
 
@@ -64,10 +71,10 @@ def main():
         loss_val.backward()
         optimizer.step()
 
-        if i == 0:
-            out_avg = deepcopy(out)
+        if i == 1:
+            out_avg = deepcopy(out.detach())
         out_avg = out_avg * args.beta + out * (1 - args.beta)
-
+        writer.add_scalar("loss", loss_val, global_step=i)
         if i % args.save_step == 0:
             out_ = out_avg.detach().cpu()
             out_ = out_[0]
