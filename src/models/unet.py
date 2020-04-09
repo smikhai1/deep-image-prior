@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List, Union
 from copy import deepcopy
 
@@ -88,5 +89,7 @@ class UNet(nn.Module):
             if skips_outs[i] is not None:
                 out = torch.cat((out, skips_outs[i]), dim=1)
             out = getattr(self, 'up_block_{}'.format(i))(out)
+
+        out = F.tanh(out)
 
         return out
