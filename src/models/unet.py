@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from typing import List, Union
 from copy import deepcopy
 
@@ -44,7 +43,7 @@ class UNet(nn.Module):
         if isinstance(k_s, int):
             k_s = [k_s] * self.num_scales
 
-        if not self.num_scales == len(k_d) == len(k_u) == len(k_s) == len(n_skips):
+        if not (self.num_scales == len(k_d) == len(k_u) == len(k_s) == len(n_skips)):
             raise ValueError('There are incorrect arguments in the constructor!')
 
         num_down_channels = deepcopy(n_filters)
@@ -90,6 +89,6 @@ class UNet(nn.Module):
                 out = torch.cat((out, skips_outs[i]), dim=1)
             out = getattr(self, 'up_block_{}'.format(i))(out)
 
-        out = F.tanh(out)
+        out = torch.tanh(out)
 
         return out

@@ -11,9 +11,8 @@ from tqdm import tqdm
 
 from src.config import Config
 from src.models import UNet
+from src.utils import load_img, save_img, central_crop, numpy2tensor, tensor2numpy
 
-# TODO: add conversion from tensor to numpy array (and vice versa)
-# TODO: add conversion form one range to another
 # TODO: add visualization of evolution
 # TODO: add computing of exponential weighted average
 # TODO: add support of flexible input initiailization
@@ -27,9 +26,19 @@ class Experiment:
         self.experiment_name = config.experiment_name
         self.paths = config.paths
         self.training = config.training
-        self.model_conf = config.model
-        self.data = config.data
+        self.data_conf = config.data
         self._check_dirs()
+
+        model_conf = config.model
+        self.in_channels = int(model_conf['in_channels'])
+        self.out_channels = int(model_conf['out_channels'])
+        self.n_filters = list(map(int, model_conf['n_filters']))
+        self.n_skips = list(map(int, model_conf['n_skips']))
+        self.k_d = int(model_conf['k_d'])
+        self.k_u = int(model_conf['k_u'])
+        self.k_s = int(model_conf['k_s'])
+        self.upsampling = model_conf['upsampling']
+        self.num_scales = len(self.n_filters)
 
     def _check_dirs(self):
         logging.info("Checking directories ...")
@@ -52,40 +61,57 @@ class Experiment:
         self.results_dir = results_dir
         logging.info("Directories checked!")
 
+    def _get_image(self, img_path):
+        raw_img = load_img(img_path, to_rgb=True, color_img=self.data_conf['color_image'])
+        height, width = raw_img.shape[:2]
+        if height % 2**self.num_scales != 0 or width % 2**self.num_scales != 0 or self.data_conf['use_crop']:
+            crop_size = int(self.data_conf['crop_size']) if self.data_conf['use_crop'] else min(height, width)
+            crop_size = crop_size // 2**self.num_scales * 2**self.num_scales
+            raw_img = central_crop(raw_img, crop_size)
+        return raw_img
+
+
     def _denoise_image(self, img_path):
         img_name = os.path.basename(img_path)
         logging.info(f"Denoising {img_name} ...")
 
-        device = self.training['device']
+        device = torch.device(self.training['device'])
         logging.info(f"Device set: {device}")
 
-        model = UNet(**self.model_conf)
+        model = UNet(self.in_channels,
+                     self.out_channels,
+                     self.n_filters,
+                     self.k_d,
+                     self.k_u,
+                     self.n_skips,
+                     self.k_s,
+                     upsampling=self.upsampling
+                     )
         model = model.to(device)
         model.train()
         logging.info("Model built!")
 
-        optim = torch.optim.Adam(model.parameters(), lr=self.training['lr'])
+        optim = torch.optim.Adam(model.parameters(), lr=float(self.training['lr']))
         loss_layer = nn.MSELoss()
         logging.info("Optimizer built!")
 
         img = self._get_image(img_path)
-        img_tensor = numpy2tensor(img, device=device)
-        z_in = torch.rand(1, self.model['in_channels'], img.shape[2], img.shape[3], device=device) * 0.1
+        img_tensor = numpy2tensor(img, in_range=(0, 255), out_range=(-1, 1), device=device)
+        z_in = torch.rand(1, self.in_channels, img_tensor.shape[2], img_tensor.shape[3], device=device) * 0.1
 
         results_dump = []
-        for i in range(self.training['max_iter']):
+        for i in range(int(self.training['max_iter'])):
             optim.zero_grad()
             gen_img = model(z_in)
             loss = loss_layer(gen_img, img_tensor)
             loss.backward()
             optim.step()
 
-            gen_img = gen_img.detach().cpu().numpy()
-            gen_img = tensor2numpy(gen_img)
-            if (i+1) % self.training['print_every']:
+            gen_img = tensor2numpy(gen_img.detach())
+            if (i+1) % int(self.training['print_every']):
                 results_dump.append(gen_img)
 
-        cv2.imwrite(os.path.join(self.results_dir, img_name), gen_img)
+        save_img(gen_img, os.path.join(self.results_dir, img_name), to_bgr=True)
         logging.info(f"Denoising of {img_name} finished!")
 
     def run(self):
