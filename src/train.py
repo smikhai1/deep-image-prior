@@ -1,4 +1,3 @@
-import cv2
 from datetime import datetime
 from glob import glob
 import os
@@ -13,8 +12,7 @@ from src.config import Config
 from src.models import UNet
 from src.utils import load_img, save_img, central_crop, numpy2tensor, tensor2numpy
 
-# TODO: add visualization of evolution
-# TODO: add computing of exponential weighted average
+# TODO: compare the architecture with the original implementation
 # TODO: add support of flexible input initiailization
 # TODO: add support of configurable optimizer and loss
 
@@ -47,18 +45,21 @@ class Experiment:
         experiment_dir = os.path.join('experiments', self.experiment_name)
         logs_dir = os.path.join(experiment_dir, 'logs')
         results_dir = os.path.join(experiment_dir, 'results')
+        originals_dir = os.path.join(experiment_dir, 'originals')
         if os.path.exists(experiment_dir):
             logging.warning(f"Directory with the experiment name '{self.experiment_name}' already exists!"
                             "Archiving this directory..."
                             )
-            os.rename(experiment_dir, experiment_dir + f"archive_{str(datetime.now())}")
+            os.rename(experiment_dir, experiment_dir + f"_archive_{str(datetime.now())}")
         os.makedirs(experiment_dir)
         os.makedirs(logs_dir)
         os.makedirs(results_dir)
+        os.makedirs(originals_dir)
         copy(self.config_path, experiment_dir)
 
         self.logs_dir = logs_dir
         self.results_dir = results_dir
+        self.originals_dir = originals_dir
         logging.info("Directories checked!")
 
     def _get_image(self, img_path):
@@ -68,6 +69,8 @@ class Experiment:
             crop_size = int(self.data_conf['crop_size']) if self.data_conf['use_crop'] else min(height, width)
             crop_size = crop_size // 2**self.num_scales * 2**self.num_scales
             raw_img = central_crop(raw_img, crop_size)
+        img_name = os.path.basename(img_path)
+        save_img(raw_img, os.path.join(self.originals_dir, img_name))
         return raw_img
 
 
@@ -100,16 +103,26 @@ class Experiment:
         z_in = torch.rand(1, self.in_channels, img_tensor.shape[2], img_tensor.shape[3], device=device) * 0.1
 
         results_dump = []
-        for i in range(int(self.training['max_iter'])):
+        gen_avg = None
+        for i in tqdm(range(int(self.training['max_iter']))):
             optim.zero_grad()
             gen_img = model(z_in)
             loss = loss_layer(gen_img, img_tensor)
             loss.backward()
             optim.step()
 
-            gen_img = tensor2numpy(gen_img.detach())
-            if (i+1) % int(self.training['print_every']):
-                results_dump.append(gen_img)
+            gen_img = gen_img.detach()
+            if gen_avg is None:
+                gen_avg = gen_img.clone()
+            else:
+                gen_avg = gen_avg * float(self.training['gamma']) + (1 - float(self.training['gamma'])) * gen_img
+
+            if self.training['use_ema']:
+                gen_img = torch.clamp(gen_avg, min=-1.0, max=1.0)
+            gen_img = tensor2numpy(gen_img, in_range=(-1, 1), out_range=(0, 255))
+
+            if (i+1) % int(self.training['print_every']) == 0:
+                save_img(gen_img, os.path.join(self.logs_dir, img_name.split('.')[0]+f"_{i+1:04}.{img_name.split('.')[1]}"), to_bgr=True)
 
         save_img(gen_img, os.path.join(self.results_dir, img_name), to_bgr=True)
         logging.info(f"Denoising of {img_name} finished!")

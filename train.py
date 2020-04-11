@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import logging
 from src.train import Experiment
 
 
@@ -11,6 +12,7 @@ def parse_args():
 def main():
 
     args = parse_args()
+    logging.basicConfig(format='[%(levelname)s]: %(message)s', level=logging.INFO)
     experiment = Experiment(args.config_path)
     experiment.run()
 

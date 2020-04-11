@@ -73,7 +73,7 @@ def central_crop(img: np.ndarray, crop_size: int):
 
 def numpy2tensor(img: np.ndarray,
                  in_range: Tuple[int, int] = (0, 255),
-                 out_range: Tuple[int, int] = (-1.0, 1.0),
+                 out_range: Tuple[int, int] = (-1, 1),
                  device: torch.device = 'cuda'
                  ):
     """
@@ -95,7 +95,7 @@ def numpy2tensor(img: np.ndarray,
 
 
 def tensor2numpy(tensor: torch.Tensor,
-                 in_range: Tuple[int, int] = (-1.0, 1.0),
+                 in_range: Tuple[int, int] = (-1, 1),
                  out_range: Tuple[int, int] = (0, 255)
                  ):
     """
